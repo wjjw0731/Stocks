@@ -1,7 +1,11 @@
 services:
   - type: web
-    name: stock-app
+    name: AKshare-streamlit
     env: python
+    branch: main
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: streamlit run app.py --server.port $PORT --server.address 0.0.0.0
+    startCommand: streamlit run app.py --server.port $PORT --server.headless true
+    envVars:
+      - key: SOME_SECRET
+        value: "your_secret_value"
