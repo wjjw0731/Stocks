@@ -1,0 +1,25 @@
+# 核心依赖：应用运行必需（按功能分类）
+streamlit==1.49.1          # 网页应用框架（与你环境版本一致）
+akshare==1.17.44           # A股数据获取核心库（与你环境版本一致）
+pandas==2.3.2              # 数据处理（DataFrame操作）
+numpy==2.0.2               # 数值计算（MACD指标等数学运算）
+requests==2.32.5           # 网络请求（辅助AKshare获取数据）
+beautifulsoup4==4.13.5     # HTML解析（AKshare部分数据源依赖）
+lxml==6.0.1                # XML/HTML解析（增强bs4解析能力，AKshare必需）
+
+# 辅助依赖：优化功能体验（可选，若代码中用到则保留）
+matplotlib==3.9.4          # 绘图（若自定义图表需保留）
+altair==5.5.0              # 交互式图表（Streamlit默认支持，可选）
+pydeck==0.9.1              # 地理信息可视化（若未用到可删除）
+openpyxl==3.1.5            # Excel文件读写（若需导出回测结果可保留）
+xlrd==2.0.2                # Excel文件读取（兼容旧版.xls格式，可选）
+tqdm==4.67.1               # 进度条（显示数据获取/回测进度，可选）
+python-dateutil==2.9.0.post0  # 日期处理（pandas依赖，自动安装可省略）
+pytz==2025.2               # 时区处理（确保日期计算准确，可选）
+
+joblib==1.5.2
+scikit-learn==1.6.1
+# 排除项说明：
+# 1. conda自带基础包（如python、pip、libgcc等）无需写入，部署平台会自动提供基础环境
+# 2. Jupyter相关包（ipython、jupyter-client等）仅本地开发用，部署时无需
+# 3. 调试/开发工具（debugpy、asttokens等）部署时无需，避免冗余
