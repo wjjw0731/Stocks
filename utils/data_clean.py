@@ -1,4 +1,5 @@
 import pandas as pd
+import os
 import joblib
 from sklearn.preprocessing import LabelEncoder
 
@@ -24,8 +25,14 @@ def clean2(df):
     df[features] = df.groupby('股票代码')[features].transform(
         lambda x: (x - x.mean()) / (x.std() + 1e-8)
     )
-
-    le = joblib.load('../model/stock_encoder.pkl')
+    current_file = os.path.abspath(__file__)
+    # 获取 utils 目录
+    utils_dir = os.path.dirname(current_file)
+    # 获取项目根目录（AKshare）
+    project_root = os.path.dirname(utils_dir)
+    # 构建模型路径
+    model_path = os.path.join(project_root, "model", "stock_encoder.pkl")
+    le = joblib.load(model_path)
     df['股票代码'] = le.fit_transform(df['股票代码'])
 
     return df

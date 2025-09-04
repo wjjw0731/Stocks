@@ -1,5 +1,6 @@
 import streamlit as st
 import akshare as ak
+import os
 import pandas as pd
 import matplotlib.pyplot as plt
 from datetime import datetime
@@ -61,7 +62,7 @@ def show():
 
     # ---------------------- 2. 页面标题与说明 ----------------------
     with st.container():
-        st.title("📊 A股MACD策略回测平台（完整收益版）")
+        st.title("📊 A股MACD策略回测平台")
         st.markdown("""
         ### 📝 策略规则
         - **买入**：MACD金叉（MACD线从下向上穿越信号线）
@@ -216,10 +217,16 @@ def show():
                     raise Exception("数据格式错误")
 
                 # 步骤4：计算信号与收益
+                current_file = os.path.abspath(__file__)
+                # 获取 utils 目录
+                utils_dir = os.path.dirname(current_file)
+                # 获取项目根目录（AKshare）
+                project_root = os.path.dirname(utils_dir)
+                # 构建模型路径
                 model_paths = {
-                    "static": "../model//model1_static_lgb.pkl",
-                    "time": "../model//model2_time_lgb.pkl",
-                    "meta": "../model//meta_model_logistic.pkl"
+                    "static": os.path.join(project_root, "model", "model1_static_lgb.pkl"),
+                    "time": os.path.join(project_root, "model", "model2_time_lgb.pkl"),
+                    "meta": os.path.join(project_root, "model", "meta_model_logistic.pkl")
                 }
 
                 models = predict_signal.load_models(model_paths)
@@ -241,7 +248,7 @@ def show():
             except Exception as e:
                 st.error(f"回测失败：{str(e)}")
 
-            st.write("🔧 步骤5/5：执行回测与收益计算...")
+            st.write("🔧 步骤4/4：执行回测与收益计算...")
             initial_capital = st.text_input("初始资金：", "100000")  # 给个默认值
             try:
                 st.session_state.initial_capital = float(initial_capital)
