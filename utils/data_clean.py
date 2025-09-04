@@ -25,7 +25,7 @@ def clean2(df):
         lambda x: (x - x.mean()) / (x.std() + 1e-8)
     )
 
-    le = joblib.load('/data/wangjiawei/Downloads/stock_encoder.pkl')
+    le = joblib.load('../model/stock_encoder.pkl')
     df['股票代码'] = le.fit_transform(df['股票代码'])
 
     return df

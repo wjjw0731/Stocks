@@ -217,9 +217,9 @@ def show():
 
                 # 步骤4：计算信号与收益
                 model_paths = {
-                    "static": "/data/wangjiawei/Downloads/model1_static_lgb.pkl",
-                    "time": "/data/wangjiawei/Downloads/model2_time_lgb.pkl",
-                    "meta": "/data/wangjiawei/Downloads/meta_model_logistic.pkl"
+                    "static": "../model//model1_static_lgb.pkl",
+                    "time": "../model//model2_time_lgb.pkl",
+                    "meta": "../model//meta_model_logistic.pkl"
                 }
 
                 models = predict_signal.load_models(model_paths)
