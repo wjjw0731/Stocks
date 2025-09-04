@@ -1,13 +1,15 @@
 import streamlit as st
 import akshare as ak
 import pandas as pd
-import numpy as np
+import matplotlib.pyplot as plt
 from datetime import datetime
 import time
 from requests.exceptions import ConnectionError, Timeout
 # 导入自定义工具函数（需确保utils文件夹存在对应文件）
-from utils import feature_engineering, data_clean
+from utils import feature_engineering, data_clean, predict_signal
 
+plt.rcParams["font.family"] = ["SimHei", "WenQuanYi Micro Hei", "Heiti TC"]
+plt.rcParams["axes.unicode_minus"] = False  # 解决负号显示异常
 
 # 计算最大回撤（风险指标）
 def calculate_max_drawdown(return_series):
@@ -214,154 +216,214 @@ def show():
                     raise Exception("数据格式错误")
 
                 # 步骤4：计算信号与收益
-                st.write("📊 步骤4/4：计算信号与收益...")
-                df["买卖信号"] = 0  # 0=无，1=买，-1=卖
-                df["仓位"] = 0  # 0=空仓，1=满仓
-                df["每日收益%"] = 0.0
-                df["累计收益倍数"] = 1.0
-
-                # 计算买卖信号
-                df.loc[
-                    (df["MACD"] > df["MACD_Signal"]) &
-                    (df["MACD"].shift(1) <= df["MACD_Signal"].shift(1)),
-                    "买卖信号"
-                ] = 1  # 买入信号
-
-                df.loc[
-                    (df["MACD"] < df["MACD_Signal"]) &
-                    (df["MACD"].shift(1) >= df["MACD_Signal"].shift(1)),
-                    "买卖信号"
-                ] = -1  # 卖出信号
-
-                # 计算仓位与收益
-                for i in range(1, len(df)):
-                    prev = df.iloc[i - 1]
-                    curr_idx = df.index[i]
-
-                    # 更新仓位
-                    if prev["仓位"] == 0:
-                        df.at[curr_idx, "仓位"] = 1 if df.iloc[i]["买卖信号"] == 1 else 0
-                    else:
-                        df.at[curr_idx, "仓位"] = 0 if df.iloc[i]["买卖信号"] == -1 else 1
-
-                    # 计算收益
-                    if df.at[curr_idx, "仓位"] == 1:
-                        daily_return = (df.iloc[i]["收盘"] - prev["收盘"]) / prev["收盘"] * 100
-                        df.at[curr_idx, "每日收益%"] = round(daily_return, 2)
-                        df.at[curr_idx, "累计收益倍数"] = round(
-                            prev["累计收益倍数"] * (1 + daily_return / 100), 4
-                        )
-                    else:
-                        df.at[curr_idx, "累计收益倍数"] = prev["累计收益倍数"]
-
-                # 计算核心指标
-                total_return = (df["累计收益倍数"].iloc[-1] - 1) * 100
-                max_dd = calculate_max_drawdown(df["累计收益倍数"])
-                win_rate = calculate_win_rate(df)
-                signal_counts = df["买卖信号"].value_counts().sort_index()
-                buy_cnt = signal_counts.get(1, 0)
-                sell_cnt = signal_counts.get(-1, 0)
-
-                st.session_state.backtest_result = {
-                    "总收益率(%)": round(total_return, 2),
-                    "最大回撤(%)": max_dd,
-                    "胜率(%)": win_rate,
-                    "买入信号": buy_cnt,
-                    "卖出信号": sell_cnt,
-                    "完整交易": min(buy_cnt, sell_cnt),
-                    "累计收益倍数": df["累计收益倍数"].iloc[-1]
+                model_paths = {
+                    "static": "/data/wangjiawei/Downloads/model1_static_lgb.pkl",
+                    "time": "/data/wangjiawei/Downloads/model2_time_lgb.pkl",
+                    "meta": "/data/wangjiawei/Downloads/meta_model_logistic.pkl"
                 }
 
-                st.success("✅ 回测完成！")
-                with st.expander("查看特征工程数据（前5行）"):
-                    st.dataframe(
-                        df[["日期", "收盘", "MACD", "MACD_Signal", "买卖信号"]].head(),
-                        hide_index=True
-                    )
+                models = predict_signal.load_models(model_paths)
+                # print(st.session_state.df.columns)
+                static_features = ['开盘', '收盘', '最高', '最低', '成交量', '换手率',
+                                   'MA_5', 'MA_20', 'MACD', 'MACD_Signal', 'RSI_14',
+                                   'Volatility_20D', 'BB_Middle', 'ATR_14', 'OBV']
+
+                time_features = ['收盘_5d_mean', '成交量_5d_mean', 'MACD_5d_mean', 'RSI_14_5d_mean',
+                                 '最高_5d_max', '最低_5d_min', '股票代码']
+
+                # st.dataframe(st.session_state.df.head(10), hide_index=True)
+
+                df_signal = predict_signal.predict_signal(st.session_state.df, static_features, time_features, models["static"], models["time"], models["meta"])
+                st.session_state.df_signal = df_signal
+
+                # st.dataframe(st.session_state.df_signal.head(10), hide_index=True)
 
             except Exception as e:
                 st.error(f"回测失败：{str(e)}")
 
-    # ---------------------- 6. 回测结果展示 ----------------------
-    if st.session_state.backtest_result is not None and st.session_state.df is not None:
-        st.subheader("4. 回测结果分析")
-        result = st.session_state.backtest_result
-        df = st.session_state.df
+            st.write("🔧 步骤5/5：执行回测与收益计算...")
+            initial_capital = st.text_input("初始资金：", "100000")  # 给个默认值
+            try:
+                st.session_state.initial_capital = float(initial_capital)
+            except ValueError:
+                st.error("请输入合法的数字作为初始资金")
+                st.stop()
 
-        # 核心指标卡片
-        with st.container(border=True):
-            col1, col2, col3, col4 = st.columns(4)
-            with col1:
-                st.metric(
-                    "总收益率",
-                    f"{result['总收益率(%)']}%",
-                    f"本金100元→{100 + result['总收益率(%)']:.2f}元"
+            # 初始化回测列
+            st.session_state.df_signal["买卖信号"] = st.session_state.df_signal["pred_signal"]
+            st.session_state.df_signal["仓位"] = 0  # 0=空仓，1=满仓
+            st.session_state.df_signal["每日收益%"] = 0.0
+            st.session_state.df_signal["累计收益倍数"] = 1.0
+            st.session_state.df_signal["资金余额"] = st.session_state.initial_capital
+            st.session_state.df_signal["持仓数量"] = 0
+            st.session_state.df_signal["持仓价值"] = 0
+
+            # 执行回测逻辑
+            for i in range(1, len(st.session_state.df_signal)):
+                prev = st.session_state.df_signal.iloc[i - 1]
+                curr = st.session_state.df_signal.iloc[i]
+                curr_idx = st.session_state.df_signal.index[i]
+                close_price = curr["收盘"]
+
+                # 更新仓位
+                if prev["仓位"] == 0:
+                    # 空仓状态
+                    if curr["买卖信号"] == 1:
+                        # 全仓买入
+                        position = int(prev["资金余额"] / close_price)
+                        st.session_state.df_signal.at[curr_idx, "仓位"] = 1
+                        st.session_state.df_signal.at[curr_idx, "持仓数量"] = position
+                        st.session_state.df_signal.at[curr_idx, "持仓价值"] = position * close_price
+                        st.session_state.df_signal.at[curr_idx, "资金余额"] = prev["资金余额"] - (position * close_price)
+                    else:
+                        # 保持空仓
+                        st.session_state.df_signal.at[curr_idx, "仓位"] = 0
+                        st.session_state.df_signal.at[curr_idx, "持仓数量"] = 0
+                        st.session_state.df_signal.at[curr_idx, "持仓价值"] = 0
+                        st.session_state.df_signal.at[curr_idx, "资金余额"] = prev["资金余额"]
+                else:
+                    # 满仓状态
+                    if curr["买卖信号"] == -1:
+                        # 清仓卖出
+                        st.session_state.df_signal.at[curr_idx, "仓位"] = 0
+                        st.session_state.df_signal.at[curr_idx, "资金余额"] = prev["资金余额"] + (prev["持仓数量"] * close_price)
+                        st.session_state.df_signal.at[curr_idx, "持仓数量"] = 0
+                        st.session_state.df_signal.at[curr_idx, "持仓价值"] = 0
+                    else:
+                        # 保持持仓
+                        st.session_state.df_signal.at[curr_idx, "仓位"] = 1
+                        st.session_state.df_signal.at[curr_idx, "持仓数量"] = prev["持仓数量"]
+                        st.session_state.df_signal.at[curr_idx, "持仓价值"] = prev["持仓数量"] * close_price
+                        st.session_state.df_signal.at[curr_idx, "资金余额"] = prev["资金余额"]
+
+                # 计算收益指标
+                total_asset_prev = prev["资金余额"] + prev["持仓价值"]
+                total_asset_curr = st.session_state.df_signal.at[curr_idx, "资金余额"] + st.session_state.df_signal.at[curr_idx, "持仓价值"]
+                daily_return = (
+                                           total_asset_curr - total_asset_prev) / total_asset_prev * 100 if total_asset_prev > 0 else 0
+                st.session_state.df_signal.at[curr_idx, "每日收益%"] = round(daily_return, 2)
+                st.session_state.df_signal.at[curr_idx, "累计收益倍数"] = round(
+                    prev["累计收益倍数"] * (1 + daily_return / 100), 4
                 )
-            with col2:
-                st.metric("最大回撤", f"{result['最大回撤(%)']}%")
-            with col3:
-                st.metric("胜率", f"{result['胜率(%)']}%")
-            with col4:
-                st.metric("完整交易次数", result['完整交易'])
 
-        # 收益曲线与价格曲线
-        with st.container(border=True):
-            st.subheader("累计收益曲线 vs 股票价格")
-            chart_df = df.set_index("日期")[["收盘", "累计收益倍数"]].copy()
-            # 价格标准化（便于同图对比）
-            chart_df["收盘标准化"] = chart_df["收盘"] / chart_df["收盘"].iloc[0]
-            st.line_chart(
-                chart_df[["收盘标准化", "累计收益倍数"]],
-                y_label="倍数（初始值=1）",
-                height=400
-            )
-            st.caption("""
-            蓝色：股票价格（标准化为初始值=1）  
-            橙色：策略累计收益（初始值=1，代表本金）  
-            注：价格标准化仅用于视觉对比，不影响实际收益计算
-            """)
+            # 计算核心回测指标
+            final_asset = st.session_state.df_signal["资金余额"].iloc[-1] + st.session_state.df_signal["持仓价值"].iloc[-1]
+            total_return = (final_asset - st.session_state.initial_capital) / st.session_state.initial_capital * 100
+            max_dd = calculate_max_drawdown(df["累计收益倍数"])
+            win_rate = calculate_win_rate(st.session_state.df_signal)
+            signal_counts = st.session_state.df_signal["买卖信号"].value_counts().sort_index()
+            buy_cnt = signal_counts.get(1, 0)
+            sell_cnt = signal_counts.get(-1, 0)
 
-        # MACD指标与买卖信号
-        with st.container(border=True):
-            st.subheader("MACD指标与买卖信号")
-            macd_df = df.set_index("日期")[["MACD", "MACD_Signal", "收盘"]]
-            st.line_chart(macd_df, height=400)
+            st.session_state.backtest_result = {
+                "总收益率(%)": round(total_return, 2),
+                "最大回撤(%)": max_dd,
+                "胜率(%)": win_rate,
+                "买入信号": buy_cnt,
+                "卖出信号": sell_cnt,
+                "完整交易": min(buy_cnt, sell_cnt),
+                "初始资金(元)": st.session_state.initial_capital,
+                "最终资产(元)": round(final_asset, 2)
+            }
 
-            # 标记买卖信号点
+            st.success("✅ 回测完成！")
+            with st.expander("查看回测数据样例（前5行）"):
+                st.dataframe(
+                    st.session_state.df_signal[["日期", "股票代码", "收盘", "pred_signal", "仓位", "资金余额", "累计收益倍数"]].head(),
+                    hide_index=True
+                )
+
+        # 4. 结果可视化
+        if st.session_state.backtest_result is not None and st.session_state.df is not None:
+            st.subheader("4. 回测结果分析")
+            df = st.session_state.df_signal
+            result = st.session_state.backtest_result
+
+            # 核心指标卡片
+            with st.container(border=True):
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("总收益率", f"{result['总收益率(%)']}%")
+                with col2:
+                    st.metric("最大回撤", f"{result['最大回撤(%)']}%")
+                with col3:
+                    st.metric("胜率", f"{result['胜率(%)']}%")
+                with col4:
+                    st.metric("最终资产", f"¥{result['最终资产(元)']:.2f}")
+
+            # 图表1：股价+信号标记
+            st.write("### 📈 股价走势与模型信号")
+            fig1, ax1 = plt.subplots(figsize=(12, 6))
+            ax1.plot(df["日期"], df["收盘"], color="#1f77b4", linewidth=1.5, label="Close Price")
+
+            # 标记买入/卖出信号
             buy_signals = df[df["买卖信号"] == 1]
             sell_signals = df[df["买卖信号"] == -1]
+            ax1.scatter(buy_signals["日期"], buy_signals["收盘"],
+                        color="#2ca02c", marker="^", s=80, label="Buy Signal", zorder=5)
+            ax1.scatter(sell_signals["日期"], sell_signals["收盘"],
+                        color="#d62728", marker="v", s=80, label="Sell Signal", zorder=5)
 
-            st.caption(f"""
-            蓝色：收盘价 | 橙色：MACD线 | 绿色：MACD信号线  
-            买入信号：{len(buy_signals)} 个 | 卖出信号：{len(sell_signals)} 个
-            """)
+            ax1.set_xlabel("日期")
+            ax1.set_ylabel("收盘价（元）")
+            ax1.set_title(f"Stock Price and Trading Signals({df['日期'].min().strftime('%Y-%m')}-{df['日期'].max().strftime('%Y-%m')})")
+            ax1.legend()
+            ax1.grid(alpha=0.3)
+            plt.xticks(rotation=45)
+            st.pyplot(fig1)
 
-        # 交易详情表
-        with st.container(border=True):
-            st.subheader("交易信号详情")
+            # 图表2：策略收益 vs 持有收益
+            st.write("### 📊 策略收益与持有收益对比")
+            fig2, ax2 = plt.subplots(figsize=(12, 6))
+            df["股价标准化"] = df["收盘"] / df["收盘"].iloc[0]  # 标准化股价
+            ax2.plot(df["日期"], df["累计收益倍数"], color="#ff7f0e", linewidth=2, label="Strategy Cumulative Return")
+            ax2.plot(df["日期"], df["股价标准化"], color="#1f77b4", linewidth=1.5, linestyle="--", label="Buy-and-Hold Return")
+
+            ax2.set_xlabel("Date")
+            ax2.set_ylabel("Return Multiple (Initial=1)")
+            ax2.set_title("Strategy vs Buy-and-Hold Returns")
+            ax2.legend()
+            ax2.grid(alpha=0.3)
+            plt.xticks(rotation=45)
+            st.pyplot(fig2)
+
+            # 图表3：资金与持仓价值变化
+            st.write("### 💰 资金与持仓价值变化")
+            fig3, ax3 = plt.subplots(figsize=(12, 6))
+            ax3.plot(df["日期"], df["资金余额"], color="#2ca02c", linewidth=2, label="Cash Balance")
+            ax3.plot(df["日期"], df["持仓价值"], color="#d62728", linewidth=2, label="Holdings Value")
+            ax3.plot(df["日期"], df["资金余额"] + df["持仓价值"],
+                     color="#1f77b4", linewidth=2.5, linestyle="--", label="Total Asset")
+            ax3.axhline(y=st.session_state.initial_capital, color="#ff7f0e",
+                        linestyle=":", linewidth=1.5, label=f"Initial Capital")
+
+            ax3.set_xlabel("Date")
+            ax3.set_ylabel("Amount")
+            ax3.set_title("Cash and Holdings Value over Time")
+            ax3.legend()
+            ax3.grid(alpha=0.3)
+            plt.xticks(rotation=45)
+            st.pyplot(fig3)
+
+            # 图表4：信号分布
+            st.write("### 📊 模型信号分布")
+            fig4, ax4 = plt.subplots(figsize=(8, 6))
+            signal_counts = df["买卖信号"].value_counts()
+            labels = ["No Signal", "Buy Signal", "Sell Signal"]
+            sizes = [signal_counts.get(0, 0), signal_counts.get(1, 0), signal_counts.get(-1, 0)]
+            colors = ["#ffbb78", "#2ca02c", "#d62728"]
+
+            ax4.pie(sizes, labels=labels, colors=colors, autopct="%1.1f%%",
+                    startangle=90, textprops={"fontsize": 11})
+            ax4.set_title(f"Signal Distribution (Total Days: {len(df)})")
+            st.pyplot(fig4)
+
+            # 交易详情表
+            st.write("### 📋 交易信号详情")
             signal_df = df[df["买卖信号"] != 0].copy()
             signal_df["信号类型"] = signal_df["买卖信号"].map({1: "买入", -1: "卖出"})
             st.dataframe(
-                signal_df[["日期", "收盘", "MACD", "MACD_Signal", "信号类型"]],
-                hide_index=True,
+                signal_df[["日期", "股票代码", "收盘", "信号类型", "资金余额", "持仓价值"]],
                 use_container_width=True
             )
 
-        # 收益统计
-        with st.container(border=True):
-            st.subheader("收益分布")
-            profit_days = df[df["每日收益%"] > 0]
-            loss_days = df[df["每日收益%"] < 0]
-            st.dataframe({
-                "类别": ["盈利交易日", "亏损交易日", "平均每日盈利", "平均每日亏损"],
-                "数据": [
-                    f"{len(profit_days)} 天",
-                    f"{len(loss_days)} 天",
-                    f"{profit_days['每日收益%'].mean():.2f}%",
-                    f"{loss_days['每日收益%'].mean():.2f}%"
-                ]
-            }, hide_index=True)
-
-
-if __name__ == "__main__":
-    show()

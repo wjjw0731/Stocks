@@ -12,7 +12,7 @@ def clean1(df):
 
 # 清洗特征工程后的数据
 def clean2(df):
-    df.fillna(method='bfill', inplace=True)
+    df.bfill(inplace=True)
     df.drop_duplicates(keep='first', inplace=True)
 
     # 标准化

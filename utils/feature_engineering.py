@@ -57,4 +57,14 @@ def feature_engineering(df):
     # 计算OBV
     obv = (np.sign(df['收盘'].diff()) * df['成交量']).fillna(0).cumsum()
     df['OBV'] = obv
+
+    def add_time_features(group):
+        for col in ['收盘', '成交量', 'MACD', 'RSI_14']:
+            group[f'{col}_5d_mean'] = group[col].rolling(5, min_periods=1).mean()
+        group['最高_5d_max'] = group['最高'].rolling(5, min_periods=1).max()
+        group['最低_5d_min'] = group['最低'].rolling(5, min_periods=1).min()
+        return group
+
+    df = df.groupby('股票代码').apply(add_time_features).reset_index(drop=True)
+
     return df
